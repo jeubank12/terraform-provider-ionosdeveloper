@@ -18,6 +18,9 @@ func resourceDnsRecord() *schema.Resource {
 		ReadContext:   resourceDnsRecordRead,
 		UpdateContext: resourceDnsRecordUpdate,
 		DeleteContext: resourceDnsRecordDelete,
+		Importer: &schema.ResourceImporter{
+			StateContext: resourceDnsRecordImport,
+		},
 		Schema: map[string]*schema.Schema{
 			"zone_id": {
 				Type:         schema.TypeString,
@@ -206,6 +209,37 @@ func resourceDnsRecordDelete(ctx context.Context, d *schema.ResourceData, m inte
 	}
 
 	return diags
+}
+
+func resourceDnsRecordImport(ctx context.Context, d *schema.ResourceData, m interface{}) ([]*schema.ResourceData, error) {
+	// Parse import ID format: zoneId/recordId
+	parts := strings.Split(d.Id(), "/")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid import ID format, expected 'zoneId/recordId', got: %s", d.Id())
+	}
+
+	zoneId, recordId := parts[0], parts[1]
+	if zoneId == "" || recordId == "" {
+		return nil, fmt.Errorf("invalid import ID: zoneId and recordId cannot be empty")
+	}
+
+	// Set zone_id in resource data
+	if err := d.Set("zone_id", zoneId); err != nil {
+		return nil, fmt.Errorf("error setting zone_id: %w", err)
+	}
+	d.SetId(recordId)
+
+	// Call Read to populate all attributes
+	diags := resourceDnsRecordRead(ctx, d, m)
+	if diags.HasError() {
+		var errMsg string
+		for _, diag := range diags {
+			errMsg += fmt.Sprintf("%s: %s\n", diag.Summary, diag.Detail)
+		}
+		return nil, fmt.Errorf("error reading DNS record during import: %s", errMsg)
+	}
+
+	return []*schema.ResourceData{d}, nil
 }
 
 func getRecordType(value interface{}) dnsSdk.RecordTypes {
